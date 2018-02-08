@@ -97,7 +97,7 @@ public class AerobaseResetCredentialEmail extends ResetCredentialEmail {
 	}
 
 	private String linkByOrigin(String link, AuthenticationFlowContext context) {
-		logger.fatal("Request to change password, context path: " + context.getHttpRequest().getUri().getPath());
+		logger.debug("Request to change password, context path: " + context.getHttpRequest().getUri().getPath());
 
 		String origin = context.getHttpRequest().getHttpHeaders().getHeaderString("origin");
 		if (origin == null || origin.length() == 0) {
@@ -107,13 +107,13 @@ public class AerobaseResetCredentialEmail extends ResetCredentialEmail {
 				if (origin == null || origin.length() == 0) {
 					return link;
 				} else {
-					logger.fatal("Request to change password, host: " + origin);
+					logger.trace("Request to change password, host: " + origin);
 				}
 			} else {
-				logger.fatal("Request to change password, referer: " + origin);
+				logger.trace("Request to change password, referer: " + origin);
 			}
 		} else {
-			logger.fatal("Request to change password, origin: " + origin);
+			logger.trace("Request to change password, origin: " + origin);
 		}
 
 		URI uri;
@@ -133,13 +133,13 @@ public class AerobaseResetCredentialEmail extends ResetCredentialEmail {
 
 		String url = protocol + "://" + domain + "/";
 
-		logger.fatal("Request to change password, url: " + url + ", original Link: " + link + ", UriInfo: "
+		logger.trace("Request to change password, url: " + url + ", original Link: " + link + ", UriInfo: "
 				+ context.getUriInfo().resolve(URI.create("/")).toString());
 
 		// Modify email link, use origin/referer header
 		link = link.replaceFirst(context.getUriInfo().resolve(URI.create("/")).toString(), url);
 
-		logger.fatal("Request to change password, result link: " + link);
+		logger.debug("Request to change password, result link: " + link);
 
 		return link;
 	}
