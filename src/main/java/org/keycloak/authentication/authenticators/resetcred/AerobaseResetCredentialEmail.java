@@ -118,6 +118,10 @@ public class AerobaseResetCredentialEmail extends ResetCredentialEmail {
 
 		URI uri;
 		try {
+			// Running from firefox, origin accepter without schema.
+			if (!origin.startsWith("http")){
+				origin = context.getUriInfo().resolve(URI.create("/")).getScheme() + "://" + origin;
+			}
 			uri = new URI(origin);
 		} catch (URISyntaxException e) {
 			logger.errorf("Bad URL Pattern extracted from referer, %s", origin);
