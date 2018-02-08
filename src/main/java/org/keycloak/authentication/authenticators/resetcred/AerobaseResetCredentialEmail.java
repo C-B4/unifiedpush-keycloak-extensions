@@ -30,92 +30,93 @@ import org.keycloak.sessions.AuthenticationSessionModel;
 public class AerobaseResetCredentialEmail extends ResetCredentialEmail {
 	private static final Logger logger = Logger.getLogger(AerobaseResetCredentialEmail.class);
 
-    @Override
-    public void authenticate(AuthenticationFlowContext context) {
-        UserModel user = context.getUser();
-        AuthenticationSessionModel authenticationSession = context.getAuthenticationSession();
-        String username = authenticationSession.getAuthNote(AbstractUsernameFormAuthenticator.ATTEMPTED_USERNAME);
+	@Override
+	public void authenticate(AuthenticationFlowContext context) {
+		UserModel user = context.getUser();
+		AuthenticationSessionModel authenticationSession = context.getAuthenticationSession();
+		String username = authenticationSession.getAuthNote(AbstractUsernameFormAuthenticator.ATTEMPTED_USERNAME);
 
-        // we don't want people guessing usernames, so if there was a problem obtaining the user, the user will be null.
-        // just reset login for with a success message
-        if (user == null) {
-            context.forkWithSuccessMessage(new FormMessage(Messages.EMAIL_SENT));
-            return;
-        }
+		// we don't want people guessing usernames, so if there was a problem
+		// obtaining the user, the user will be null.
+		// just reset login for with a success message
+		if (user == null) {
+			context.forkWithSuccessMessage(new FormMessage(Messages.EMAIL_SENT));
+			return;
+		}
 
-        String actionTokenUserId = authenticationSession.getAuthNote(DefaultActionTokenKey.ACTION_TOKEN_USER_ID);
-        if (actionTokenUserId != null && Objects.equals(user.getId(), actionTokenUserId)) {
-            logger.debugf("Forget-password triggered when reauthenticating user after authentication via action token. Skipping " + PROVIDER_ID + " screen and using user '%s' ", user.getUsername());
-            context.success();
-            return;
-        }
+		String actionTokenUserId = authenticationSession.getAuthNote(DefaultActionTokenKey.ACTION_TOKEN_USER_ID);
+		if (actionTokenUserId != null && Objects.equals(user.getId(), actionTokenUserId)) {
+			logger.debugf(
+					"Forget-password triggered when reauthenticating user after authentication via action token. Skipping "
+							+ PROVIDER_ID + " screen and using user '%s' ",
+					user.getUsername());
+			context.success();
+			return;
+		}
 
+		EventBuilder event = context.getEvent();
+		// we don't want people guessing usernames, so if there is a problem,
+		// just continuously challenge
+		if (user.getEmail() == null || user.getEmail().trim().length() == 0) {
+			event.user(user).detail(Details.USERNAME, username).error(Errors.INVALID_EMAIL);
 
-        EventBuilder event = context.getEvent();
-        // we don't want people guessing usernames, so if there is a problem, just continuously challenge
-        if (user.getEmail() == null || user.getEmail().trim().length() == 0) {
-            event.user(user)
-                    .detail(Details.USERNAME, username)
-                    .error(Errors.INVALID_EMAIL);
+			context.forkWithSuccessMessage(new FormMessage(Messages.EMAIL_SENT));
+			return;
+		}
 
-            context.forkWithSuccessMessage(new FormMessage(Messages.EMAIL_SENT));
-            return;
-        }
+		int validityInSecs = context.getRealm()
+				.getActionTokenGeneratedByUserLifespan(ResetCredentialsActionToken.TOKEN_TYPE);
+		int absoluteExpirationInSecs = Time.currentTime() + validityInSecs;
 
-        int validityInSecs = context.getRealm().getActionTokenGeneratedByUserLifespan(ResetCredentialsActionToken.TOKEN_TYPE);
-        int absoluteExpirationInSecs = Time.currentTime() + validityInSecs;
+		// We send the secret in the email in a link as a query param.
+		ResetCredentialsActionToken token = new ResetCredentialsActionToken(user.getId(), absoluteExpirationInSecs,
+				authenticationSession.getParentSession().getId());
+		String link = UriBuilder
+				.fromUri(context.getActionTokenUrl(
+						token.serialize(context.getSession(), context.getRealm(), context.getUriInfo())))
+				.build().toString();
 
-        // We send the secret in the email in a link as a query param.
-        ResetCredentialsActionToken token = new ResetCredentialsActionToken(user.getId(), absoluteExpirationInSecs, authenticationSession.getParentSession().getId());
-        String link = UriBuilder
-          .fromUri(context.getActionTokenUrl(token.serialize(context.getSession(), context.getRealm(), context.getUriInfo())))
-          .build()
-          .toString();
+		link = linkByOrigin(link, context);
+		long expirationInMinutes = TimeUnit.SECONDS.toMinutes(validityInSecs);
+		try {
+			context.getSession().getProvider(EmailTemplateProvider.class).setRealm(context.getRealm()).setUser(user)
+					.sendPasswordReset(link, expirationInMinutes);
 
-        link = linkByOrigin(link, context);
-        long expirationInMinutes = TimeUnit.SECONDS.toMinutes(validityInSecs);
-        try {
-            context.getSession().getProvider(EmailTemplateProvider.class).setRealm(context.getRealm()).setUser(user).sendPasswordReset(link, expirationInMinutes);
+			event.clone().event(EventType.SEND_RESET_PASSWORD).user(user).detail(Details.USERNAME, username)
+					.detail(Details.EMAIL, user.getEmail())
+					.detail(Details.CODE_ID, authenticationSession.getParentSession().getId()).success();
+			context.forkWithSuccessMessage(new FormMessage(Messages.EMAIL_SENT));
+		} catch (EmailException e) {
+			event.clone().event(EventType.SEND_RESET_PASSWORD).detail(Details.USERNAME, username).user(user)
+					.error(Errors.EMAIL_SEND_FAILED);
+			ServicesLogger.LOGGER.failedToSendPwdResetEmail(e);
+			Response challenge = context.form().setError(Messages.EMAIL_SENT_ERROR)
+					.createErrorPage(Response.Status.INTERNAL_SERVER_ERROR);
+			context.failure(AuthenticationFlowError.INTERNAL_ERROR, challenge);
+		}
+	}
 
-            event.clone().event(EventType.SEND_RESET_PASSWORD)
-                         .user(user)
-                         .detail(Details.USERNAME, username)
-                         .detail(Details.EMAIL, user.getEmail()).detail(Details.CODE_ID, authenticationSession.getParentSession().getId()).success();
-            context.forkWithSuccessMessage(new FormMessage(Messages.EMAIL_SENT));
-        } catch (EmailException e) {
-            event.clone().event(EventType.SEND_RESET_PASSWORD)
-                    .detail(Details.USERNAME, username)
-                    .user(user)
-                    .error(Errors.EMAIL_SEND_FAILED);
-            ServicesLogger.LOGGER.failedToSendPwdResetEmail(e);
-            Response challenge = context.form()
-                    .setError(Messages.EMAIL_SENT_ERROR)
-                    .createErrorPage(Response.Status.INTERNAL_SERVER_ERROR);
-            context.failure(AuthenticationFlowError.INTERNAL_ERROR, challenge);
-        }
-    }
+	private String linkByOrigin(String link, AuthenticationFlowContext context) {
+		logger.fatal("Request to change password, context path: " + context.getHttpRequest().getUri().getPath());
 
-    private String linkByOrigin(String link, AuthenticationFlowContext context){
-    	logger.fatal("Request to change password, context path: " + context.getHttpRequest().getUri().getPath());
+		String origin = context.getHttpRequest().getHttpHeaders().getHeaderString("origin");
+		if (origin == null || origin.length() == 0) {
+			origin = context.getHttpRequest().getHttpHeaders().getHeaderString("referer");
+			if (origin == null || origin.length() == 0) {
+				origin = context.getHttpRequest().getHttpHeaders().getHeaderString("host");
+				if (origin == null || origin.length() == 0) {
+					return link;
+				} else {
+					logger.fatal("Request to change password, host: " + origin);
+				}
+			} else {
+				logger.fatal("Request to change password, referer: " + origin);
+			}
+		} else {
+			logger.fatal("Request to change password, origin: " + origin);
+		}
 
-    	String origin = context.getHttpRequest().getHttpHeaders().getHeaderString("origin");
-    	if (origin == null || origin.length() == 0) {
-    		origin = context.getHttpRequest().getHttpHeaders().getHeaderString("referer");
-    		if (origin == null || origin.length() == 0) {
-    			origin = context.getHttpRequest().getHttpHeaders().getHeaderString("host");
-    			if (origin == null || origin.length() == 0) {
-        			return link;
-        		}else{
-        			logger.fatal("Request to change password, host: " + origin);
-        		}
-    		}else{
-    			logger.fatal("Request to change password, referer: " + origin);
-    		}
-    	}else{
-    		logger.fatal("Request to change password, origin: " + origin);
-    	}
-
-    	URI uri;
+		URI uri;
 		try {
 			uri = new URI(origin);
 		} catch (URISyntaxException e) {
@@ -123,14 +124,19 @@ public class AerobaseResetCredentialEmail extends ResetCredentialEmail {
 			return link;
 		}
 
-    	String domain = uri.getHost();
-    	String protocol = uri.getScheme();
+		String domain = uri.getHost();
+		String protocol = uri.getScheme();
 
-    	String url = protocol + "://" + domain + "/";
+		String url = protocol + "://" + domain + "/";
 
-    	logger.fatal("Request to change password, url: " + origin + ", original Link" + link);
+		logger.fatal("Request to change password, url: " + url + ", original Link: " + link + ", UriInfo: "
+				+ context.getUriInfo().resolve(URI.create("/")).toString());
 
-    	// Modify email link, use origin/referer header
-    	return link.replaceFirst(context.getUriInfo().resolve(URI.create("/")).toString(), url);
-    }
+		// Modify email link, use origin/referer header
+		link = link.replaceFirst(context.getUriInfo().resolve(URI.create("/")).toString(), url);
+
+		logger.fatal("Request to change password, result link: " + link);
+
+		return link;
+	}
 }
