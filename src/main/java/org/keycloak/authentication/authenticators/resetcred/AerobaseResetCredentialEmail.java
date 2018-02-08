@@ -1,6 +1,7 @@
 package org.keycloak.authentication.authenticators.resetcred;
 
 import java.net.URI;
+import java.net.URISyntaxException;
 import java.util.Objects;
 import java.util.concurrent.TimeUnit;
 
@@ -97,14 +98,26 @@ public class AerobaseResetCredentialEmail extends ResetCredentialEmail {
     private String linkByOrigin(String link, AuthenticationFlowContext context){
     	String origin = context.getHttpRequest().getHttpHeaders().getHeaderString("origin");
     	if (origin == null || origin.length() == 0) {
-    		return link;
+    		origin = context.getHttpRequest().getHttpHeaders().getHeaderString("Referer");
+    		if (origin == null || origin.length() == 0) {
+    			return link;
+    		}
     	}
 
-    	if (!origin.endsWith("/")){
-    		origin += "/";
-    	}
+    	URI uri;
+		try {
+			uri = new URI(origin);
+		} catch (URISyntaxException e) {
+			logger.errorf("Bad URL Pattern extracted from referer, %s", origin);
+			return link;
+		}
 
-    	// Modify email link, use referer header
-    	return link.replaceFirst(context.getUriInfo().resolve(URI.create("/")).toString(), origin);
+    	String domain = uri.getHost();
+    	String protocol = uri.getScheme();
+
+    	String url = protocol + "://" + domain + "/";
+
+    	// Modify email link, use origin/referer header
+    	return link.replaceFirst(context.getUriInfo().resolve(URI.create("/")).toString(), url);
     }
 }
