@@ -98,9 +98,12 @@ public class AerobaseResetCredentialEmail extends ResetCredentialEmail {
     private String linkByOrigin(String link, AuthenticationFlowContext context){
     	String origin = context.getHttpRequest().getHttpHeaders().getHeaderString("origin");
     	if (origin == null || origin.length() == 0) {
-    		origin = context.getHttpRequest().getHttpHeaders().getHeaderString("Referer");
+    		origin = context.getHttpRequest().getHttpHeaders().getHeaderString("referer");
     		if (origin == null || origin.length() == 0) {
-    			return link;
+    			origin = context.getHttpRequest().getHttpHeaders().getHeaderString("host");
+    			if (origin == null || origin.length() == 0) {
+        			return link;
+        		}
     		}
     	}
 
