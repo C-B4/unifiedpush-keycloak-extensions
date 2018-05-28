@@ -12,7 +12,7 @@
 	<modelVersion>4.0.0</modelVersion>
 
 	<groupId>org.jboss.aerogear.unifiedpush</groupId>
-	<artifactId>unifiedpush-keycloak-spi</artifactId>
+	<artifactId>unifiedpush-keycloak-services</artifactId>
 	<name>AeroBase Tweaking to keycloak services</name>
 	<version>1.2.0.Final</version>
 
