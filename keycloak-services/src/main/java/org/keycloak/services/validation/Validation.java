@@ -55,20 +55,20 @@ public class Validation {
         	}
         }
 
-        if (requiredCredentialTypes.contains(CredentialRepresentation.PASSWORD)) {
-            if (isBlank(formData.getFirst(FIELD_PASSWORD))) {
-                addError(errors, FIELD_PASSWORD, Messages.MISSING_PASSWORD);
-            } else if (!formData.getFirst(FIELD_PASSWORD).equals(formData.getFirst(FIELD_PASSWORD_CONFIRM))) {
-                addError(errors, FIELD_PASSWORD_CONFIRM, Messages.INVALID_PASSWORD_CONFIRM);
-            }
-        }
-
-        if (formData.getFirst(FIELD_PASSWORD) != null) {
-            PolicyError err = session.getProvider(PasswordPolicyManagerProvider.class).validate(realm.isRegistrationEmailAsUsername() ? formData.getFirst(FIELD_EMAIL) : formData.getFirst(FIELD_USERNAME), formData.getFirst(FIELD_PASSWORD));
-            if (err != null)
-                errors.add(new FormMessage(FIELD_PASSWORD, err.getMessage(), err.getParameters()));
-        }
-        
+//        if (requiredCredentialTypes.contains(CredentialRepresentation.PASSWORD)) {
+//            if (isBlank(formData.getFirst(FIELD_PASSWORD))) {
+//                addError(errors, FIELD_PASSWORD, Messages.MISSING_PASSWORD);
+//            } else if (!formData.getFirst(FIELD_PASSWORD).equals(formData.getFirst(FIELD_PASSWORD_CONFIRM))) {
+//                addError(errors, FIELD_PASSWORD_CONFIRM, Messages.INVALID_PASSWORD_CONFIRM);
+//            }
+//        }
+//
+//        if (formData.getFirst(FIELD_PASSWORD) != null) {
+//            PolicyError err = session.getProvider(PasswordPolicyManagerProvider.class).validate(realm.isRegistrationEmailAsUsername() ? formData.getFirst(FIELD_EMAIL) : formData.getFirst(FIELD_USERNAME), formData.getFirst(FIELD_PASSWORD));
+//            if (err != null)
+//                errors.add(new FormMessage(FIELD_PASSWORD, err.getMessage(), err.getParameters()));
+//        }
+//        
         return errors;
     }
     
