@@ -35,7 +35,8 @@ public class AerobaseResetCredentialEmail extends ResetCredentialEmail {
 		UserModel user = context.getUser();
 		AuthenticationSessionModel authenticationSession = context.getAuthenticationSession();
 		String username = authenticationSession.getAuthNote(AbstractUsernameFormAuthenticator.ATTEMPTED_USERNAME);
-
+		logger.info("session user is" + username);
+				
 		// we don't want people guessing usernames, so if there was a problem
 		// obtaining the user, the user will be null.
 		// just reset login for with a success message
@@ -43,6 +44,7 @@ public class AerobaseResetCredentialEmail extends ResetCredentialEmail {
 			context.forkWithSuccessMessage(new FormMessage(Messages.EMAIL_SENT));
 			return;
 		}
+		logger.info("context user is, " + user.getEmail()); 
 
 		String actionTokenUserId = authenticationSession.getAuthNote(DefaultActionTokenKey.ACTION_TOKEN_USER_ID);
 		if (actionTokenUserId != null && Objects.equals(user.getId(), actionTokenUserId)) {
@@ -53,6 +55,8 @@ public class AerobaseResetCredentialEmail extends ResetCredentialEmail {
 			context.success();
 			return;
 		}
+		
+		logger.info("actionTokenUserId is, " + actionTokenUserId);
 
 		EventBuilder event = context.getEvent();
 		// we don't want people guessing usernames, so if there is a problem,

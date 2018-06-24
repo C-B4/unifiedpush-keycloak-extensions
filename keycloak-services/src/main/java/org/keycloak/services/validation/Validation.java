@@ -17,23 +17,24 @@
 
 package org.keycloak.services.validation;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.regex.Pattern;
+
+import javax.ws.rs.core.MultivaluedMap;
+
+import org.jboss.logging.Logger;
+import org.keycloak.authentication.forms.RegistrationProfile;
 import org.keycloak.authentication.requiredactions.util.UpdateProfileContext;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.PasswordPolicy;
 import org.keycloak.models.RealmModel;
 import org.keycloak.models.utils.FormMessage;
-import org.keycloak.policy.PasswordPolicyManagerProvider;
-import org.keycloak.policy.PolicyError;
-import org.keycloak.representations.idm.CredentialRepresentation;
 import org.keycloak.services.messages.Messages;
 
-import javax.ws.rs.core.MultivaluedMap;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.regex.Pattern;
-
 public class Validation {
-
+	private static final Logger logger = Logger.getLogger(RegistrationProfile.class);
+	
     public static final String FIELD_PASSWORD_CONFIRM = "password-confirm";
     public static final String FIELD_EMAIL = "email";
     public static final String FIELD_LAST_NAME = "lastName";
@@ -44,31 +45,25 @@ public class Validation {
     // Actually allow same emails like angular. See ValidationTest.testEmailValidation()
     private static final Pattern EMAIL_PATTERN = Pattern.compile("[a-zA-Z0-9!#$%&'*+/=?^_`{|}~.-]+@[a-zA-Z0-9-]+(\\.[a-zA-Z0-9-]+)*");
 
+    // Validate phone numbers 
+    public static final Pattern PHONE_PATTERN = Pattern.compile("^\\\\+(?:[0-9] ?){6,14}[0-9]$");
+    
     public static List<FormMessage> validateRegistrationForm(KeycloakSession session, RealmModel realm, MultivaluedMap<String, String> formData, List<String> requiredCredentialTypes, PasswordPolicy policy) {
         List<FormMessage> errors = new ArrayList<>();
 
+        logger.info("creating new user " + formData.getFirst(FIELD_USERNAME));
+        
         if (!realm.isRegistrationEmailAsUsername() && isBlank(formData.getFirst(FIELD_USERNAME))) {
             addError(errors, FIELD_USERNAME, Messages.MISSING_USERNAME);
-        } else {
-        	if (!isEmailValid(formData.getFirst(FIELD_USERNAME))) {
-        		formData.add(FIELD_EMAIL, formData.getFirst(FIELD_USERNAME));
-        	}
+        } else if (isEmailValid(formData.getFirst(FIELD_USERNAME))) {
+        	formData.add(FIELD_EMAIL, formData.getFirst(FIELD_USERNAME));
         }
 
-//        if (requiredCredentialTypes.contains(CredentialRepresentation.PASSWORD)) {
-//            if (isBlank(formData.getFirst(FIELD_PASSWORD))) {
-//                addError(errors, FIELD_PASSWORD, Messages.MISSING_PASSWORD);
-//            } else if (!formData.getFirst(FIELD_PASSWORD).equals(formData.getFirst(FIELD_PASSWORD_CONFIRM))) {
-//                addError(errors, FIELD_PASSWORD_CONFIRM, Messages.INVALID_PASSWORD_CONFIRM);
-//            }
-//        }
-//
-//        if (formData.getFirst(FIELD_PASSWORD) != null) {
-//            PolicyError err = session.getProvider(PasswordPolicyManagerProvider.class).validate(realm.isRegistrationEmailAsUsername() ? formData.getFirst(FIELD_EMAIL) : formData.getFirst(FIELD_USERNAME), formData.getFirst(FIELD_PASSWORD));
-//            if (err != null)
-//                errors.add(new FormMessage(FIELD_PASSWORD, err.getMessage(), err.getParameters()));
-//        }
-//        
+        else {
+        	logger.info("email/phone format invalid");
+        	addError(errors, FIELD_EMAIL, Messages.INVALID_EMAIL);
+        }
+
         return errors;
     }
     
@@ -132,6 +127,10 @@ public class Validation {
     }
 
     public static boolean isEmailValid(String email) {
+        return EMAIL_PATTERN.matcher(email).matches();
+    }
+    
+    public static boolean isPhoneValid(String email) {
         return EMAIL_PATTERN.matcher(email).matches();
     }
 

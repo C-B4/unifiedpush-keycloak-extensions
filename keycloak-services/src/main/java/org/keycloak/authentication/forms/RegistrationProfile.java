@@ -17,6 +17,12 @@
 
 package org.keycloak.authentication.forms;
 
+import java.util.ArrayList;
+import java.util.List;
+
+import javax.ws.rs.core.MultivaluedMap;
+
+import org.jboss.logging.Logger;
 import org.keycloak.Config;
 import org.keycloak.authentication.FormAction;
 import org.keycloak.authentication.FormActionFactory;
@@ -35,144 +41,180 @@ import org.keycloak.provider.ProviderConfigProperty;
 import org.keycloak.services.messages.Messages;
 import org.keycloak.services.validation.Validation;
 
-import javax.ws.rs.core.MultivaluedMap;
-import java.util.ArrayList;
-import java.util.List;
-
 /**
  * @author <a href="mailto:bill@burkecentral.com">Bill Burke</a>
  * @version $Revision: 1 $
  */
 public class RegistrationProfile implements FormAction, FormActionFactory {
-    public static final String PROVIDER_ID = "registration-profile-action";
+	public static final String PROVIDER_ID = "registration-profile-action";
+	private static final Logger logger = Logger.getLogger(RegistrationProfile.class);
 
-    @Override
-    public String getHelpText() {
-        return "Validates email, first name, and last name attributes and stores them in user data.";
-    }
+	public static final String FIELD_CLIENT_ID = "client_id";
+	public static final String FIELD_IS_MOBILE = "is_mobile";
+	public static final String MISSING_CLIENT_ID = "missingClientIDMessage";
+	public static final String INVALID_PHONE = "invalidPhoneMessage";
 
-    @Override
-    public List<ProviderConfigProperty> getConfigProperties() {
-        return null;
-    }
+	@Override
+	public String getHelpText() {
+		return "Validates email, first name, and last name attributes and stores them in user data.";
+	}
 
-    @Override
-    public void validate(ValidationContext context) {
-        MultivaluedMap<String, String> formData = context.getHttpRequest().getDecodedFormParameters();
-        List<FormMessage> errors = new ArrayList<>();
+	@Override
+	public List<ProviderConfigProperty> getConfigProperties() {
+		return null;
+	}
 
-        context.getEvent().detail(Details.REGISTER_METHOD, "form");
-        String eventError = Errors.INVALID_REGISTRATION;
+	@Override
+	public void validate(ValidationContext context) {
+		MultivaluedMap<String, String> formData = context.getHttpRequest().getDecodedFormParameters();
+		List<FormMessage> errors = new ArrayList<>();
 
+		context.getEvent().detail(Details.REGISTER_METHOD, "form");
+		String eventError = Errors.INVALID_REGISTRATION;
 
-        String email = formData.getFirst(Validation.FIELD_USERNAME);
-        boolean emailValid = true;
-        if (Validation.isBlank(email)) {
-            errors.add(new FormMessage(RegistrationPage.FIELD_EMAIL, Messages.MISSING_EMAIL));
-            emailValid = false;
-        }else {
-        	if (!Validation.isEmailValid(formData.getFirst(Validation.FIELD_USERNAME))) {
-        		formData.add(Validation.FIELD_EMAIL, formData.getFirst(Validation.FIELD_USERNAME));
-        	}
-        }
+		String username = formData.getFirst(Validation.FIELD_USERNAME);
+		String clientId = formData.getFirst(FIELD_CLIENT_ID);
+		String deviceType = formData.getFirst(FIELD_IS_MOBILE);
 
-        if (emailValid && !context.getRealm().isDuplicateEmailsAllowed() && context.getSession().users().getUserByEmail(email, context.getRealm()) != null) {
-            eventError = Errors.EMAIL_IN_USE;
-            formData.remove(Validation.FIELD_EMAIL);
-            context.getEvent().detail(Details.EMAIL, email);
-            errors.add(new FormMessage(RegistrationPage.FIELD_EMAIL, Messages.EMAIL_EXISTS));
-        }
+		boolean emailValid = true;
+		boolean phoneValid = true;
 
-        if (errors.size() > 0) {
-            context.error(eventError);
-            context.validationError(formData, errors);
-            return;
+		if (Validation.isBlank(clientId)) {
+			errors.add(new FormMessage(FIELD_CLIENT_ID, MISSING_CLIENT_ID));
+		}
 
-        } else {
-            context.success();
-        }
-    }
+		if (Validation.isBlank(username)) {
+			errors.add(new FormMessage(RegistrationPage.FIELD_USERNAME, Messages.MISSING_USERNAME));
+			emailValid = false;
+		}
 
-    @Override
-    public void success(FormContext context) {
-        UserModel user = context.getUser();
-        MultivaluedMap<String, String> formData = context.getHttpRequest().getDecodedFormParameters();
-        user.setFirstName(formData.getFirst(RegistrationPage.FIELD_FIRST_NAME));
-        user.setLastName(formData.getFirst(RegistrationPage.FIELD_LAST_NAME));
-        user.setEmail(formData.getFirst(RegistrationPage.FIELD_EMAIL));
-    }
+		switch (deviceType.toUpperCase()) {
+		case "WEBAPP":
+			if (Validation.isEmailValid(username)) {
+				formData.add(Validation.FIELD_EMAIL, username);
+			} else {
+				emailValid = false;
+				logger.debug("invalid email format: " + username);
+				errors.add(new FormMessage(RegistrationPage.FIELD_USERNAME, Messages.INVALID_EMAIL));
+			}
+			break;
+		case "MOBILE":
+			if (Validation.isPhoneValid(username)) {
+				phoneValid = false;
+				logger.debug("invalid phone format: " + username);
+				errors.add(new FormMessage(RegistrationPage.FIELD_USERNAME, INVALID_PHONE));
+			}
+			break;
+		default:
+			break;
+		}
 
-    @Override
-    public void buildPage(FormContext context, LoginFormsProvider form) {
-        // complete
-    }
+		if (emailValid && !context.getRealm().isDuplicateEmailsAllowed()
+				&& context.getSession().users().getUserByEmail(username, context.getRealm()) != null) {
+			eventError = Errors.EMAIL_IN_USE;
+			formData.remove(Validation.FIELD_EMAIL);
+			context.getEvent().detail(Details.EMAIL, username);
+			errors.add(new FormMessage(RegistrationPage.FIELD_USERNAME, Messages.EMAIL_EXISTS));
+		}
 
-    @Override
-    public boolean requiresUser() {
-        return false;
-    }
+		// Validate duplicated phones
+		if (phoneValid && !context.getRealm().isDuplicateEmailsAllowed()
+				&& context.getSession().users().getUserByUsername(username, context.getRealm()) != null) {
+			eventError = Errors.USERNAME_IN_USE;
+			formData.remove(Validation.FIELD_EMAIL);
+			context.getEvent().detail(Details.EMAIL, username);
+			errors.add(new FormMessage(RegistrationPage.FIELD_USERNAME, INVALID_PHONE));
+		}
 
-    @Override
-    public boolean configuredFor(KeycloakSession session, RealmModel realm, UserModel user) {
-        return true;
-    }
+		if (errors.size() > 0) {
+			context.error(eventError);
+			context.validationError(formData, errors);
+			return;
 
-    @Override
-    public void setRequiredActions(KeycloakSession session, RealmModel realm, UserModel user) {
+		} else {
+			context.success();
+		}
+	}
 
-    }
+	@Override
+	public void success(FormContext context) {
+		UserModel user = context.getUser();
+		MultivaluedMap<String, String> formData = context.getHttpRequest().getDecodedFormParameters();
+		user.setFirstName(formData.getFirst(RegistrationPage.FIELD_FIRST_NAME));
+		user.setLastName(formData.getFirst(RegistrationPage.FIELD_LAST_NAME));
+		user.setEmail(formData.getFirst(RegistrationPage.FIELD_EMAIL));
+	}
 
-    @Override
-    public boolean isUserSetupAllowed() {
-        return false;
-    }
+	@Override
+	public void buildPage(FormContext context, LoginFormsProvider form) {
+		// complete
+	}
 
+	@Override
+	public boolean requiresUser() {
+		return false;
+	}
 
-    @Override
-    public void close() {
+	@Override
+	public boolean configuredFor(KeycloakSession session, RealmModel realm, UserModel user) {
+		return true;
+	}
 
-    }
+	@Override
+	public void setRequiredActions(KeycloakSession session, RealmModel realm, UserModel user) {
 
-    @Override
-    public String getDisplayType() {
-        return "Profile Validation";
-    }
+	}
 
-    @Override
-    public String getReferenceCategory() {
-        return null;
-    }
+	@Override
+	public boolean isUserSetupAllowed() {
+		return false;
+	}
 
-    @Override
-    public boolean isConfigurable() {
-        return false;
-    }
+	@Override
+	public void close() {
 
-    private static AuthenticationExecutionModel.Requirement[] REQUIREMENT_CHOICES = {
-            AuthenticationExecutionModel.Requirement.REQUIRED,
-            AuthenticationExecutionModel.Requirement.DISABLED
-    };
-    @Override
-    public AuthenticationExecutionModel.Requirement[] getRequirementChoices() {
-        return REQUIREMENT_CHOICES;
-    }
-    @Override
-    public FormAction create(KeycloakSession session) {
-        return this;
-    }
+	}
 
-    @Override
-    public void init(Config.Scope config) {
+	@Override
+	public String getDisplayType() {
+		return "Profile Validation";
+	}
 
-    }
+	@Override
+	public String getReferenceCategory() {
+		return null;
+	}
 
-    @Override
-    public void postInit(KeycloakSessionFactory factory) {
+	@Override
+	public boolean isConfigurable() {
+		return false;
+	}
 
-    }
+	private static AuthenticationExecutionModel.Requirement[] REQUIREMENT_CHOICES = {
+			AuthenticationExecutionModel.Requirement.REQUIRED, AuthenticationExecutionModel.Requirement.DISABLED };
 
-    @Override
-    public String getId() {
-        return PROVIDER_ID;
-    }
+	@Override
+	public AuthenticationExecutionModel.Requirement[] getRequirementChoices() {
+		return REQUIREMENT_CHOICES;
+	}
+
+	@Override
+	public FormAction create(KeycloakSession session) {
+		return this;
+	}
+
+	@Override
+	public void init(Config.Scope config) {
+
+	}
+
+	@Override
+	public void postInit(KeycloakSessionFactory factory) {
+
+	}
+
+	@Override
+	public String getId() {
+		return PROVIDER_ID;
+	}
 }
