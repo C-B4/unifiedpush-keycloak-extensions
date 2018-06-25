@@ -46,22 +46,22 @@ public class Validation {
     private static final Pattern EMAIL_PATTERN = Pattern.compile("[a-zA-Z0-9!#$%&'*+/=?^_`{|}~.-]+@[a-zA-Z0-9-]+(\\.[a-zA-Z0-9-]+)*");
 
     // Validate phone numbers 
-    public static final Pattern PHONE_PATTERN = Pattern.compile("^\\\\+(?:[0-9] ?){6,14}[0-9]$");
+    private static final Pattern PHONE_PATTERN = Pattern.compile("^\\+?(?:[0-9][ ,-]?){6,14}[0-9]$");
     
     public static List<FormMessage> validateRegistrationForm(KeycloakSession session, RealmModel realm, MultivaluedMap<String, String> formData, List<String> requiredCredentialTypes, PasswordPolicy policy) {
         List<FormMessage> errors = new ArrayList<>();
 
-        logger.info("creating new user " + formData.getFirst(FIELD_USERNAME));
+        logger.debug("creating new user " + formData.getFirst(FIELD_USERNAME));
         
         if (!realm.isRegistrationEmailAsUsername() && isBlank(formData.getFirst(FIELD_USERNAME))) {
             addError(errors, FIELD_USERNAME, Messages.MISSING_USERNAME);
         } else if (isEmailValid(formData.getFirst(FIELD_USERNAME))) {
         	formData.add(FIELD_EMAIL, formData.getFirst(FIELD_USERNAME));
-        }
-
-        else {
+        } else if (isPhoneValid(formData.getFirst(FIELD_USERNAME))) {
+        	// Do nothing, we can't add phone format to email fields 
+        } else {
         	logger.info("email/phone format invalid");
-        	addError(errors, FIELD_EMAIL, Messages.INVALID_EMAIL);
+        	addError(errors, FIELD_USERNAME, Messages.INVALID_EMAIL);
         }
 
         return errors;
@@ -76,20 +76,13 @@ public class Validation {
         
         if (!realm.isRegistrationEmailAsUsername() && realm.isEditUsernameAllowed() && isBlank(formData.getFirst(FIELD_USERNAME))) {
             addError(errors, FIELD_USERNAME, Messages.MISSING_USERNAME);
-        }
-
-        if (isBlank(formData.getFirst(FIELD_FIRST_NAME))) {
-            addError(errors, FIELD_FIRST_NAME, Messages.MISSING_FIRST_NAME);
-        }
-
-        if (isBlank(formData.getFirst(FIELD_LAST_NAME))) {
-            addError(errors, FIELD_LAST_NAME, Messages.MISSING_LAST_NAME);
-        }
-
-        if (isBlank(formData.getFirst(FIELD_EMAIL))) {
-            addError(errors, FIELD_EMAIL, Messages.MISSING_EMAIL);
-        } else if (!isEmailValid(formData.getFirst(FIELD_EMAIL))) {
-            addError(errors, FIELD_EMAIL, Messages.INVALID_EMAIL);
+        } else if (isEmailValid(formData.getFirst(FIELD_USERNAME))) {
+        	formData.add(FIELD_EMAIL, formData.getFirst(FIELD_USERNAME));
+        } else if (isPhoneValid(formData.getFirst(FIELD_USERNAME))) {
+        	// Do nothing, we can't add phone format to email fields 
+        } else {
+        	logger.info("email/phone format invalid");
+        	addError(errors, FIELD_USERNAME, Messages.INVALID_EMAIL);
         }
 
         return errors;
@@ -131,7 +124,7 @@ public class Validation {
     }
     
     public static boolean isPhoneValid(String email) {
-        return EMAIL_PATTERN.matcher(email).matches();
+        return PHONE_PATTERN.matcher(email).matches();
     }
 
 
