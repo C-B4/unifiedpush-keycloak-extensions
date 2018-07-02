@@ -49,11 +49,9 @@ import org.keycloak.services.validation.Validation;
  * @version $Revision: 1 $
  */
 public class RegistrationProfile implements FormAction, FormActionFactory {
-	public static final String PROVIDER_ID = "registration-profile-action";
 	private static final Logger logger = Logger.getLogger(RegistrationProfile.class);
-
-	public static final String FIELD_CLIENT_ID = "ups_client_id";
-	public static final String FIELD_IS_MOBILE = "ups_is_mobile";
+	
+	public static final String PROVIDER_ID = "registration-profile-action";
 	public static final String MISSING_CLIENT_ID = "missingClientIDMessage";
 	public static final String INVALID_PHONE = "invalidPhoneMessage";
 
@@ -76,13 +74,13 @@ public class RegistrationProfile implements FormAction, FormActionFactory {
 		String eventError = Errors.INVALID_REGISTRATION;
 
 		String username = formData.getFirst(Validation.FIELD_USERNAME);
-		String clientId = formData.getFirst(FIELD_CLIENT_ID);
-		String deviceType = formData.getFirst(FIELD_IS_MOBILE);
+		String clientId = formData.getFirst(Validation.FIELD_CLIENT_ID);
+		String deviceType = formData.getFirst(Validation.FIELD_IS_MOBILE);
 		boolean isMobile = true;
 		boolean usernameValid = true;
 
 		if (Validation.isBlank(clientId)) {
-			errors.add(new FormMessage(FIELD_CLIENT_ID, MISSING_CLIENT_ID));
+			errors.add(new FormMessage(Validation.FIELD_CLIENT_ID, MISSING_CLIENT_ID));
 		}
 
 		if (Validation.isBlank(username)) {
@@ -112,7 +110,7 @@ public class RegistrationProfile implements FormAction, FormActionFactory {
 		default:
 			usernameValid = false;
 			logger.debug("unsupported application type: " + deviceType);
-			errors.add(new FormMessage(FIELD_IS_MOBILE, Messages.INVALID_PARAMETER));
+			errors.add(new FormMessage(Validation.FIELD_IS_MOBILE, Messages.INVALID_PARAMETER));
 			break;
 		}
 
@@ -149,9 +147,22 @@ public class RegistrationProfile implements FormAction, FormActionFactory {
 		user.setFirstName(formData.getFirst(RegistrationPage.FIELD_FIRST_NAME));
 		user.setLastName(formData.getFirst(RegistrationPage.FIELD_LAST_NAME));
 		user.setEmail(formData.getFirst(RegistrationPage.FIELD_EMAIL));
-
+		
+		String deviceType = formData.getFirst(Validation.FIELD_IS_MOBILE);
+		
+		switch (deviceType.toUpperCase()) {
+		case "WEBAPP":
+			user.addRequiredAction(UserModel.RequiredAction.VERIFY_EMAIL.name());	
+			break;
+		case "MOBILE":
+			// TODO - Add SMSRequiredAction
+			break;
+		default:
+			break;
+		}
+	
 		// Add client roles to user
-		String clientId = formData.getFirst(FIELD_CLIENT_ID);
+		String clientId = formData.getFirst(Validation.FIELD_CLIENT_ID);
 		if (!Validation.isBlank(clientId)) {
 			ClientModel clientModel = context.getRealm().getClientById(clientId);
 			if (clientModel != null) { 
@@ -161,7 +172,7 @@ public class RegistrationProfile implements FormAction, FormActionFactory {
 				logger.debug("client roles are empty or null: " + clientId);
 			}
 		} else {
-			logger.warn("Unknown clientid, user will not be assined to client roles");
+			logger.warn("Unknown clientid, user will not be assigned to client roles");
 		}
 	}
 
