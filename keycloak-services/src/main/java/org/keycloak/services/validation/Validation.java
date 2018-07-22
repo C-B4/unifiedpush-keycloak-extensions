@@ -53,7 +53,7 @@ public class Validation {
     public static List<FormMessage> validateRegistrationForm(KeycloakSession session, RealmModel realm, MultivaluedMap<String, String> formData, List<String> requiredCredentialTypes, PasswordPolicy policy) {
         List<FormMessage> errors = new ArrayList<>();
 
-        logger.debug("creating new user " + formData.getFirst(FIELD_USERNAME));
+        logger.warn("creating new user " + formData.getFirst(FIELD_USERNAME));
         
         if (!realm.isRegistrationEmailAsUsername() && isBlank(formData.getFirst(FIELD_USERNAME))) {
             addError(errors, FIELD_USERNAME, Messages.MISSING_USERNAME);

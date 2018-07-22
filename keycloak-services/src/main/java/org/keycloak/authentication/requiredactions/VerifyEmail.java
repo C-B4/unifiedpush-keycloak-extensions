@@ -17,15 +17,6 @@
 
 package org.keycloak.authentication.requiredactions;
 
-import java.util.Objects;
-import java.util.concurrent.TimeUnit;
-
-import javax.ws.rs.core.MultivaluedMap;
-import javax.ws.rs.core.Response;
-import javax.ws.rs.core.UriBuilder;
-import javax.ws.rs.core.UriBuilderException;
-import javax.ws.rs.core.UriInfo;
-
 import org.jboss.logging.Logger;
 import org.keycloak.Config;
 import org.keycloak.authentication.RequiredActionContext;
@@ -40,39 +31,29 @@ import org.keycloak.events.Errors;
 import org.keycloak.events.EventBuilder;
 import org.keycloak.events.EventType;
 import org.keycloak.forms.login.LoginFormsProvider;
-import org.keycloak.models.Constants;
-import org.keycloak.models.KeycloakSession;
-import org.keycloak.models.KeycloakSessionFactory;
-import org.keycloak.models.RealmModel;
-import org.keycloak.models.UserModel;
+import org.keycloak.models.*;
 import org.keycloak.services.Urls;
 import org.keycloak.services.validation.Validation;
+
 import org.keycloak.sessions.AuthenticationSessionCompoundId;
 import org.keycloak.sessions.AuthenticationSessionModel;
+import java.util.Objects;
+import java.util.concurrent.TimeUnit;
+import javax.ws.rs.core.*;
 
 /**
  * @author <a href="mailto:bill@burkecentral.com">Bill Burke</a>
  * @version $Revision: 1 $
  */
-public class VerifySMS implements RequiredActionProvider, RequiredActionFactory {
-    private static final Logger logger = Logger.getLogger(VerifySMS.class);
-    
+public class VerifyEmail implements RequiredActionProvider, RequiredActionFactory {
+    private static final Logger logger = Logger.getLogger(VerifyEmail.class);
     @Override
     public void evaluateTriggers(RequiredActionContext context) {
-    	MultivaluedMap<String, String> formData = context.getHttpRequest().getDecodedFormParameters();
-    	String deviceType = formData.getFirst(Validation.FIELD_IS_MOBILE);
-    	String username =  context.getUser().getUsername();
-    	
-		if (deviceType.toUpperCase().equals("MOBILE") && Validation.isPhoneValid(username)) {
-			context.getUser().addRequiredAction(UserModel.RequiredAction.VERIFY_EMAIL);
-		}
-		
         if (context.getRealm().isVerifyEmail() && !context.getUser().isEmailVerified()) {
-            context.getUser().addRequiredAction("VERIFY_SMS");
-            logger.debug("User is required to verify sms");
+            context.getUser().addRequiredAction(UserModel.RequiredAction.VERIFY_EMAIL);
+            logger.debug("User is required to verify email");
         }
     }
-    
     @Override
     public void requiredActionChallenge(RequiredActionContext context) {
         AuthenticationSessionModel authSession = context.getAuthenticationSession();
@@ -83,8 +64,8 @@ public class VerifySMS implements RequiredActionProvider, RequiredActionFactory 
             return;
         }
 
-        String username =  context.getUser().getUsername();
-        if (Validation.isBlank(username)) {
+        String email = context.getUser().getEmail();
+        if (Validation.isBlank(email)) {
             context.ignore();
             return;
         }
@@ -93,15 +74,15 @@ public class VerifySMS implements RequiredActionProvider, RequiredActionFactory 
         Response challenge;
 
         // Do not allow resending e-mail by simple page refresh, i.e. when e-mail sent, it should be resent properly via email-verification endpoint
-//        if (! Objects.equals(authSession.getAuthNote(Constants.VERIFY_EMAIL_KEY), username)) {
-//            authSession.setAuthNote(Constants.VERIFY_EMAIL_KEY, email);
-//            EventBuilder event = context.getEvent().clone().event(EventType.SEND_VERIFY_EMAIL).detail(Details.EMAIL, email);
-//            challenge = sendVerifyEmail(context.getSession(), loginFormsProvider, context.getUser(), context.getAuthenticationSession(), event);
-//        } else {
-//            challenge = loginFormsProvider.createResponse(UserModel.RequiredAction.VERIFY_EMAIL);
-//        }
+        if (! Objects.equals(authSession.getAuthNote(Constants.VERIFY_EMAIL_KEY), email)) {
+            authSession.setAuthNote(Constants.VERIFY_EMAIL_KEY, email);
+            EventBuilder event = context.getEvent().clone().event(EventType.SEND_VERIFY_EMAIL).detail(Details.EMAIL, email);
+            challenge = sendVerifyEmail(context, context.getSession(), loginFormsProvider, context.getUser(), context.getAuthenticationSession(), event);
+        } else {
+            challenge = loginFormsProvider.createResponse(UserModel.RequiredAction.VERIFY_EMAIL);
+        }
 
-        //context.challenge(challenge);
+        context.challenge(challenge);
     }
 
 
@@ -147,7 +128,22 @@ public class VerifySMS implements RequiredActionProvider, RequiredActionFactory 
         return UserModel.RequiredAction.VERIFY_EMAIL.name();
     }
 
-    private Response sendVerifyEmail(KeycloakSession session, LoginFormsProvider forms, UserModel user, AuthenticationSessionModel authSession, EventBuilder event) throws UriBuilderException, IllegalArgumentException {
+    private Response sendVerifyEmail(RequiredActionContext context, KeycloakSession session, LoginFormsProvider forms, UserModel user, AuthenticationSessionModel authSession, EventBuilder event) throws UriBuilderException, IllegalArgumentException {
+
+    	MultivaluedMap<String, String> formData = context.getHttpRequest().getDecodedFormParameters();
+    	String deviceType = formData.getFirst(Validation.FIELD_IS_MOBILE);
+    	String username =  context.getUser().getUsername();
+    	
+		if (deviceType.toUpperCase().equals("MOBILE") && Validation.isPhoneValid(username)) {
+			logger.warn("SENDING SMS MESSAGE VERIFICATIONS");
+			// TODO - Register new short link with UPS 
+			// Send short link
+		}
+
+        return sendEmail(context, session, forms, user, authSession, event);
+    }
+    
+    private Response sendEmail(RequiredActionContext context, KeycloakSession session, LoginFormsProvider forms, UserModel user, AuthenticationSessionModel authSession, EventBuilder event) throws UriBuilderException, IllegalArgumentException {    
         RealmModel realm = session.getContext().getRealm();
         UriInfo uriInfo = session.getContext().getUri();
 

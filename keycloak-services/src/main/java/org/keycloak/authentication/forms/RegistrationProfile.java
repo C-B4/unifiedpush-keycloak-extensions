@@ -50,7 +50,7 @@ import org.keycloak.services.validation.Validation;
  */
 public class RegistrationProfile implements FormAction, FormActionFactory {
 	private static final Logger logger = Logger.getLogger(RegistrationProfile.class);
-	
+
 	public static final String PROVIDER_ID = "registration-profile-action";
 	public static final String MISSING_CLIENT_ID = "missingClientIDMessage";
 	public static final String INVALID_PHONE = "invalidPhoneMessage";
@@ -67,15 +67,20 @@ public class RegistrationProfile implements FormAction, FormActionFactory {
 
 	@Override
 	public void validate(ValidationContext context) {
-		MultivaluedMap<String, String> formData = context.getHttpRequest().getDecodedFormParameters();
+		MultivaluedMap<String, String> formData = context.getHttpRequest().getFormParameters();
 		List<FormMessage> errors = new ArrayList<>();
+
+		formData.forEach((k, v) -> {
+			logger.warn("Key: " + k + " Value: " + v);
+		});
 
 		context.getEvent().detail(Details.REGISTER_METHOD, "form");
 		String eventError = Errors.INVALID_REGISTRATION;
-
+		
 		String username = formData.getFirst(Validation.FIELD_USERNAME);
 		String clientId = formData.getFirst(Validation.FIELD_CLIENT_ID);
 		String deviceType = formData.getFirst(Validation.FIELD_IS_MOBILE);
+		
 		boolean isMobile = true;
 		boolean usernameValid = true;
 
@@ -91,6 +96,8 @@ public class RegistrationProfile implements FormAction, FormActionFactory {
 		switch (deviceType.toUpperCase()) {
 		case "WEBAPP":
 			isMobile = false;
+			logger.warn(username);
+
 			if (Validation.isEmailValid(username)) {
 				formData.add(Validation.FIELD_EMAIL, username);
 			} else {
@@ -101,7 +108,7 @@ public class RegistrationProfile implements FormAction, FormActionFactory {
 			break;
 		case "MOBILE":
 			isMobile = true;
-			if (Validation.isPhoneValid(username)) {
+			if (!Validation.isPhoneValid(username)) {
 				usernameValid = false;
 				logger.debug("invalid phone format: " + username);
 				errors.add(new FormMessage(RegistrationPage.FIELD_USERNAME, INVALID_PHONE));
@@ -147,25 +154,12 @@ public class RegistrationProfile implements FormAction, FormActionFactory {
 		user.setFirstName(formData.getFirst(RegistrationPage.FIELD_FIRST_NAME));
 		user.setLastName(formData.getFirst(RegistrationPage.FIELD_LAST_NAME));
 		user.setEmail(formData.getFirst(RegistrationPage.FIELD_EMAIL));
-		
-		String deviceType = formData.getFirst(Validation.FIELD_IS_MOBILE);
-		
-		switch (deviceType.toUpperCase()) {
-		case "WEBAPP":
-			user.addRequiredAction(UserModel.RequiredAction.VERIFY_EMAIL.name());	
-			break;
-		case "MOBILE":
-			// TODO - Add SMSRequiredAction
-			break;
-		default:
-			break;
-		}
-	
+
 		// Add client roles to user
 		String clientId = formData.getFirst(Validation.FIELD_CLIENT_ID);
 		if (!Validation.isBlank(clientId)) {
 			ClientModel clientModel = context.getRealm().getClientById(clientId);
-			if (clientModel != null) { 
+			if (clientModel != null) {
 				Set<RoleModel> roles = clientModel.getRoles();
 				user.getClientRoleMappings(clientModel).addAll(roles);
 			} else {
