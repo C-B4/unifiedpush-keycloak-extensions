@@ -66,6 +66,11 @@ public class VerifyEmail implements RequiredActionProvider, RequiredActionFactor
 
         String email = context.getUser().getEmail();
         if (Validation.isBlank(email)) {
+        	// Extract username as email
+        	email = context.getUser().getUsername();
+        }
+        
+        if (Validation.isBlank(email)) {
             context.ignore();
             return;
         }
@@ -129,12 +134,9 @@ public class VerifyEmail implements RequiredActionProvider, RequiredActionFactor
     }
 
     private Response sendVerifyEmail(RequiredActionContext context, KeycloakSession session, LoginFormsProvider forms, UserModel user, AuthenticationSessionModel authSession, EventBuilder event) throws UriBuilderException, IllegalArgumentException {
-
-    	MultivaluedMap<String, String> formData = context.getHttpRequest().getDecodedFormParameters();
-    	String deviceType = formData.getFirst(Validation.FIELD_IS_MOBILE);
     	String username =  context.getUser().getUsername();
     	
-		if (deviceType.toUpperCase().equals("MOBILE") && Validation.isPhoneValid(username)) {
+		if (Validation.isPhoneValid(username)) {
 			logger.warn("SENDING SMS MESSAGE VERIFICATIONS");
 			// TODO - Register new short link with UPS 
 			// Send short link

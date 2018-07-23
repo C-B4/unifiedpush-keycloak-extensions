@@ -67,7 +67,7 @@ public class RegistrationProfile implements FormAction, FormActionFactory {
 
 	@Override
 	public void validate(ValidationContext context) {
-		MultivaluedMap<String, String> formData = context.getHttpRequest().getFormParameters();
+		MultivaluedMap<String, String> formData = context.getHttpRequest().getDecodedFormParameters();
 		List<FormMessage> errors = new ArrayList<>();
 
 		formData.forEach((k, v) -> {
@@ -93,34 +93,36 @@ public class RegistrationProfile implements FormAction, FormActionFactory {
 			usernameValid = false;
 		}
 
-		switch (deviceType.toUpperCase()) {
-		case "WEBAPP":
-			isMobile = false;
-			logger.warn(username);
-
-			if (Validation.isEmailValid(username)) {
-				formData.add(Validation.FIELD_EMAIL, username);
-			} else {
+		if (!Validation.isBlank(username)) {
+			switch (deviceType.toUpperCase()) {
+			case "WEBAPP":
+				isMobile = false;
+				logger.warn(username);
+	
+				if (Validation.isEmailValid(username)) {
+					formData.add(Validation.FIELD_EMAIL, username);
+				} else {
+					usernameValid = false;
+					logger.debug("invalid email format: " + username);
+					errors.add(new FormMessage(RegistrationPage.FIELD_USERNAME, Messages.INVALID_EMAIL));
+				}
+				break;
+			case "MOBILE":
+				isMobile = true;
+				if (!Validation.isPhoneValid(username)) {
+					usernameValid = false;
+					logger.debug("invalid phone format: " + username);
+					errors.add(new FormMessage(RegistrationPage.FIELD_USERNAME, INVALID_PHONE));
+				}
+				break;
+			default:
 				usernameValid = false;
-				logger.debug("invalid email format: " + username);
-				errors.add(new FormMessage(RegistrationPage.FIELD_USERNAME, Messages.INVALID_EMAIL));
+				logger.debug("unsupported application type: " + deviceType);
+				errors.add(new FormMessage(Validation.FIELD_IS_MOBILE, Messages.INVALID_PARAMETER));
+				break;
 			}
-			break;
-		case "MOBILE":
-			isMobile = true;
-			if (!Validation.isPhoneValid(username)) {
-				usernameValid = false;
-				logger.debug("invalid phone format: " + username);
-				errors.add(new FormMessage(RegistrationPage.FIELD_USERNAME, INVALID_PHONE));
-			}
-			break;
-		default:
-			usernameValid = false;
-			logger.debug("unsupported application type: " + deviceType);
-			errors.add(new FormMessage(Validation.FIELD_IS_MOBILE, Messages.INVALID_PARAMETER));
-			break;
 		}
-
+		
 		if (!isMobile && usernameValid && !context.getRealm().isDuplicateEmailsAllowed()
 				&& context.getSession().users().getUserByEmail(username, context.getRealm()) != null) {
 			eventError = Errors.EMAIL_IN_USE;
