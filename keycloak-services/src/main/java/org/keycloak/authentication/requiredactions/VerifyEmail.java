@@ -17,7 +17,20 @@
 
 package org.keycloak.authentication.requiredactions;
 
+import java.util.Objects;
+import java.util.concurrent.TimeUnit;
+
+import javax.ws.rs.client.Entity;
+import javax.ws.rs.core.MediaType;
+import javax.ws.rs.core.Response;
+import javax.ws.rs.core.UriBuilder;
+import javax.ws.rs.core.UriBuilderException;
+import javax.ws.rs.core.UriInfo;
+
 import org.jboss.logging.Logger;
+import org.jboss.resteasy.client.jaxrs.ResteasyClient;
+import org.jboss.resteasy.client.jaxrs.ResteasyClientBuilder;
+import org.jboss.resteasy.client.jaxrs.ResteasyWebTarget;
 import org.keycloak.Config;
 import org.keycloak.authentication.RequiredActionContext;
 import org.keycloak.authentication.RequiredActionFactory;
@@ -31,121 +44,113 @@ import org.keycloak.events.Errors;
 import org.keycloak.events.EventBuilder;
 import org.keycloak.events.EventType;
 import org.keycloak.forms.login.LoginFormsProvider;
-import org.keycloak.models.*;
+import org.keycloak.models.Constants;
+import org.keycloak.models.KeycloakSession;
+import org.keycloak.models.KeycloakSessionFactory;
+import org.keycloak.models.RealmModel;
+import org.keycloak.models.UserModel;
 import org.keycloak.services.Urls;
 import org.keycloak.services.validation.Validation;
-
 import org.keycloak.sessions.AuthenticationSessionCompoundId;
 import org.keycloak.sessions.AuthenticationSessionModel;
-import java.util.Objects;
-import java.util.concurrent.TimeUnit;
-import javax.ws.rs.core.*;
 
 /**
  * @author <a href="mailto:bill@burkecentral.com">Bill Burke</a>
  * @version $Revision: 1 $
  */
 public class VerifyEmail implements RequiredActionProvider, RequiredActionFactory {
-    private static final Logger logger = Logger.getLogger(VerifyEmail.class);
-    @Override
-    public void evaluateTriggers(RequiredActionContext context) {
-        if (context.getRealm().isVerifyEmail() && !context.getUser().isEmailVerified()) {
-            context.getUser().addRequiredAction(UserModel.RequiredAction.VERIFY_EMAIL);
-            logger.debug("User is required to verify email");
-        }
-    }
-    @Override
-    public void requiredActionChallenge(RequiredActionContext context) {
-        AuthenticationSessionModel authSession = context.getAuthenticationSession();
+	private static final Logger logger = Logger.getLogger(VerifyEmail.class);
 
-        if (context.getUser().isEmailVerified()) {
-            context.success();
-            authSession.removeAuthNote(Constants.VERIFY_EMAIL_KEY);
-            return;
-        }
+	@Override
+	public void evaluateTriggers(RequiredActionContext context) {
+		if (context.getRealm().isVerifyEmail() && !context.getUser().isEmailVerified()) {
+			context.getUser().addRequiredAction(UserModel.RequiredAction.VERIFY_EMAIL);
+			logger.debug("User is required to verify email");
+		}
+	}
 
-        String email = context.getUser().getEmail();
-        if (Validation.isBlank(email)) {
-        	// Extract username as email
-        	email = context.getUser().getUsername();
-        }
-        
-        if (Validation.isBlank(email)) {
-            context.ignore();
-            return;
-        }
+	@Override
+	public void requiredActionChallenge(RequiredActionContext context) {
+		AuthenticationSessionModel authSession = context.getAuthenticationSession();
 
-        LoginFormsProvider loginFormsProvider = context.form();
-        Response challenge;
-
-        // Do not allow resending e-mail by simple page refresh, i.e. when e-mail sent, it should be resent properly via email-verification endpoint
-        if (! Objects.equals(authSession.getAuthNote(Constants.VERIFY_EMAIL_KEY), email)) {
-            authSession.setAuthNote(Constants.VERIFY_EMAIL_KEY, email);
-            EventBuilder event = context.getEvent().clone().event(EventType.SEND_VERIFY_EMAIL).detail(Details.EMAIL, email);
-            challenge = sendVerifyEmail(context, context.getSession(), loginFormsProvider, context.getUser(), context.getAuthenticationSession(), event);
-        } else {
-            challenge = loginFormsProvider.createResponse(UserModel.RequiredAction.VERIFY_EMAIL);
-        }
-
-        context.challenge(challenge);
-    }
-
-
-    @Override
-    public void processAction(RequiredActionContext context) {
-        logger.debugf("Re-sending email requested for user: %s", context.getUser().getUsername());
-
-        // This will allow user to re-send email again
-        context.getAuthenticationSession().removeAuthNote(Constants.VERIFY_EMAIL_KEY);
-
-        requiredActionChallenge(context);
-    }
-
-
-    @Override
-    public void close() {
-
-    }
-
-    @Override
-    public RequiredActionProvider create(KeycloakSession session) {
-        return this;
-    }
-
-    @Override
-    public void init(Config.Scope config) {
-
-    }
-
-    @Override
-    public void postInit(KeycloakSessionFactory factory) {
-
-    }
-
-    @Override
-    public String getDisplayText() {
-        return "Verify Email";
-    }
-
-
-    @Override
-    public String getId() {
-        return UserModel.RequiredAction.VERIFY_EMAIL.name();
-    }
-
-    private Response sendVerifyEmail(RequiredActionContext context, KeycloakSession session, LoginFormsProvider forms, UserModel user, AuthenticationSessionModel authSession, EventBuilder event) throws UriBuilderException, IllegalArgumentException {
-    	String username =  context.getUser().getUsername();
-    	
-		if (Validation.isPhoneValid(username)) {
-			logger.warn("SENDING SMS MESSAGE VERIFICATIONS");
-			// TODO - Register new short link with UPS 
-			// Send short link
+		if (context.getUser().isEmailVerified()) {
+			context.success();
+			authSession.removeAuthNote(Constants.VERIFY_EMAIL_KEY);
+			return;
 		}
 
-        return sendEmail(context, session, forms, user, authSession, event);
-    }
-    
-    private Response sendEmail(RequiredActionContext context, KeycloakSession session, LoginFormsProvider forms, UserModel user, AuthenticationSessionModel authSession, EventBuilder event) throws UriBuilderException, IllegalArgumentException {    
+		String email = context.getUser().getEmail();
+		if (Validation.isBlank(email)) {
+			// Extract username as email
+			email = context.getUser().getUsername();
+		}
+
+		if (Validation.isBlank(email)) {
+			context.ignore();
+			return;
+		}
+
+		LoginFormsProvider loginFormsProvider = context.form();
+		Response challenge;
+
+		// Do not allow resending e-mail by simple page refresh, i.e. when e-mail sent,
+		// it should be resent properly via email-verification endpoint
+		if (!Objects.equals(authSession.getAuthNote(Constants.VERIFY_EMAIL_KEY), email)) {
+			authSession.setAuthNote(Constants.VERIFY_EMAIL_KEY, email);
+			EventBuilder event = context.getEvent().clone().event(EventType.SEND_VERIFY_EMAIL).detail(Details.EMAIL,
+					email);
+			challenge = sendVerifyEmail(context, context.getSession(), loginFormsProvider, context.getUser(),
+					context.getAuthenticationSession(), event);
+		} else {
+			challenge = loginFormsProvider.createResponse(UserModel.RequiredAction.VERIFY_EMAIL);
+		}
+
+		context.challenge(challenge);
+	}
+
+	@Override
+	public void processAction(RequiredActionContext context) {
+		logger.debugf("Re-sending email requested for user: %s", context.getUser().getUsername());
+
+		// This will allow user to re-send email again
+		context.getAuthenticationSession().removeAuthNote(Constants.VERIFY_EMAIL_KEY);
+
+		requiredActionChallenge(context);
+	}
+
+	@Override
+	public void close() {
+
+	}
+
+	@Override
+	public RequiredActionProvider create(KeycloakSession session) {
+		return this;
+	}
+
+	@Override
+	public void init(Config.Scope config) {
+
+	}
+
+	@Override
+	public void postInit(KeycloakSessionFactory factory) {
+
+	}
+
+	@Override
+	public String getDisplayText() {
+		return "Verify Email";
+	}
+
+	@Override
+	public String getId() {
+		return UserModel.RequiredAction.VERIFY_EMAIL.name();
+	}
+
+	private Response sendVerifyEmail(RequiredActionContext context, KeycloakSession session, LoginFormsProvider forms, UserModel user, AuthenticationSessionModel authSession, EventBuilder event) throws UriBuilderException, IllegalArgumentException {
+    	String username =  context.getUser().getUsername();
+    	
         RealmModel realm = session.getContext().getRealm();
         UriInfo uriInfo = session.getContext().getUri();
 
@@ -154,24 +159,51 @@ public class VerifyEmail implements RequiredActionProvider, RequiredActionFactor
 
         String authSessionEncodedId = AuthenticationSessionCompoundId.fromAuthSession(authSession).getEncodedId();
         VerifyEmailActionToken token = new VerifyEmailActionToken(user.getId(), absoluteExpirationInSecs, authSessionEncodedId, user.getEmail());
-        UriBuilder builder = Urls.actionTokenBuilder(uriInfo.getBaseUri(), token.serialize(session, realm, uriInfo),
-                authSession.getClient().getClientId(), authSession.getTabId());
+        String sToken = token.serialize(session, realm, uriInfo);
+        UriBuilder builder = Urls.actionTokenBuilder(uriInfo.getBaseUri(), sToken, authSession.getClient().getClientId(), authSession.getTabId());
+        
         String link = builder.build(realm.getName()).toString();
         long expirationInMinutes = TimeUnit.SECONDS.toMinutes(validityInSecs);
+        
+		if (Validation.isPhoneValid(username)) {
+			return sendSMS(sToken, username, forms, event);
+		}
 
-        try {
-            session
-              .getProvider(EmailTemplateProvider.class)
-              .setAuthenticationSession(authSession)
-              .setRealm(realm)
-              .setUser(user)
-              .sendVerifyEmail(link, expirationInMinutes);
-            event.success();
-        } catch (EmailException e) {
-            logger.error("Failed to send verification email", e);
-            event.error(Errors.EMAIL_SEND_FAILED);
-        }
-
-        return forms.createResponse(UserModel.RequiredAction.VERIFY_EMAIL);
+        return sendEmail(realm, session, forms, user, authSession, event, link, expirationInMinutes);
     }
+	
+	private Response sendSMS(String token, String username, LoginFormsProvider forms, EventBuilder event) {
+		logger.info("SENDING SMS MESSAGE VERIFICATIONS");
+		
+		ResteasyClient client = new ResteasyClientBuilder().build();
+
+		// First register installation
+		try {
+			ResteasyWebTarget target = client.target("http://yaniv-laptop.c-b4.com/unifiedpush-server/rest/shortlinks/" + username);
+			target.request().post(Entity.entity(token, MediaType.APPLICATION_FORM_URLENCODED));
+			event.success();
+		}catch (Exception e) {
+			logger.error("Failed to send verification sms", e);
+			event.error(Errors.EMAIL_SEND_FAILED);
+		}
+		
+		return forms.createResponse(UserModel.RequiredAction.VERIFY_EMAIL);
+	}
+			
+	private Response sendEmail(RealmModel realm, KeycloakSession session, LoginFormsProvider forms,
+			UserModel user, AuthenticationSessionModel authSession, EventBuilder event, String link,
+			long expirationInMinutes)
+			throws UriBuilderException, IllegalArgumentException {
+
+		try {
+			session.getProvider(EmailTemplateProvider.class).setAuthenticationSession(authSession).setRealm(realm)
+					.setUser(user).sendVerifyEmail(link, expirationInMinutes);
+			event.success();
+		} catch (EmailException e) {
+			logger.error("Failed to send verification email", e);
+			event.error(Errors.EMAIL_SEND_FAILED);
+		}
+
+		return forms.createResponse(UserModel.RequiredAction.VERIFY_EMAIL);
+	}
 }
