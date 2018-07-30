@@ -17,12 +17,14 @@
 
 package org.keycloak.authentication.requiredactions;
 
+import java.net.URI;
 import java.util.Objects;
 import java.util.concurrent.TimeUnit;
 
 import javax.ws.rs.client.Entity;
 import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
+import javax.ws.rs.core.Response.Status.Family;
 import javax.ws.rs.core.UriBuilder;
 import javax.ws.rs.core.UriBuilderException;
 import javax.ws.rs.core.UriInfo;
@@ -153,7 +155,7 @@ public class VerifyEmail implements RequiredActionProvider, RequiredActionFactor
     	
         RealmModel realm = session.getContext().getRealm();
         UriInfo uriInfo = session.getContext().getUri();
-
+        
         int validityInSecs = realm.getActionTokenGeneratedByUserLifespan(VerifyEmailActionToken.TOKEN_TYPE);
         int absoluteExpirationInSecs = Time.currentTime() + validityInSecs;
 
@@ -166,21 +168,34 @@ public class VerifyEmail implements RequiredActionProvider, RequiredActionFactor
         long expirationInMinutes = TimeUnit.SECONDS.toMinutes(validityInSecs);
         
 		if (Validation.isPhoneValid(username)) {
-			return sendSMS(sToken, username, forms, event);
+			return sendSMS(link, username, session, forms, event);
 		}
 
         return sendEmail(realm, session, forms, user, authSession, event, link, expirationInMinutes);
     }
 	
-	private Response sendSMS(String token, String username, LoginFormsProvider forms, EventBuilder event) {
-		logger.info("SENDING SMS MESSAGE VERIFICATIONS");
+	private Response sendSMS(String link, String username, KeycloakSession session, LoginFormsProvider forms, EventBuilder event) {
+		logger.trace("sending sms message verifications");
 		
 		ResteasyClient client = new ResteasyClientBuilder().build();
-
+		URI requestUri = session.getContext().getUri().getRequestUri();
+		String serverURL = requestUri.getScheme() + "://" + requestUri.getHost() + "/unifiedpush-server/rest";
 		// First register installation
 		try {
-			ResteasyWebTarget target = client.target("http://yaniv-laptop.c-b4.com/unifiedpush-server/rest/shortlinks/" + username);
-			target.request().post(Entity.entity(token, MediaType.APPLICATION_FORM_URLENCODED));
+			ResteasyWebTarget target = client.target(serverURL + "/shortlinks/type/link/username/" + username);
+			Response response = target.request().put(Entity.entity(link, MediaType.TEXT_PLAIN));
+			if (Family.familyOf(response.getStatus()) != Family.SUCCESSFUL)
+				throw new Exception("Unable to register new shortlink code. response code " + response.getStatus()); 
+			
+			String code = response.readEntity(String.class);
+			response.close();
+			
+			target = client.target(serverURL + "/shortlinks/sms/" + username);
+			response = target.request().put(Entity.entity(code, MediaType.TEXT_PLAIN));
+			if (Family.familyOf(response.getStatus()) != Family.SUCCESSFUL)
+				throw new Exception("Unable to send SMS shortlink code. response code " + response.getStatus()); 
+			response.close();
+			
 			event.success();
 		}catch (Exception e) {
 			logger.error("Failed to send verification sms", e);
