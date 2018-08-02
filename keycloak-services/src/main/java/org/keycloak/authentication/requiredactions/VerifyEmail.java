@@ -51,6 +51,7 @@ import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.KeycloakSessionFactory;
 import org.keycloak.models.RealmModel;
 import org.keycloak.models.UserModel;
+import org.keycloak.models.UserModel.RequiredAction;
 import org.keycloak.services.Urls;
 import org.keycloak.services.validation.Validation;
 import org.keycloak.sessions.AuthenticationSessionCompoundId;
@@ -67,6 +68,7 @@ public class VerifyEmail implements RequiredActionProvider, RequiredActionFactor
 	public void evaluateTriggers(RequiredActionContext context) {
 		if (context.getRealm().isVerifyEmail() && !context.getUser().isEmailVerified()) {
 			context.getUser().addRequiredAction(UserModel.RequiredAction.VERIFY_EMAIL);
+			context.getUser().addRequiredAction(RequiredAction.UPDATE_PASSWORD.name());
 			logger.debug("User is required to verify email");
 		}
 	}

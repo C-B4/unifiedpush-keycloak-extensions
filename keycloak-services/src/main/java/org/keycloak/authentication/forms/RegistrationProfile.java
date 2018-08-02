@@ -155,7 +155,7 @@ public class RegistrationProfile implements FormAction, FormActionFactory {
 		MultivaluedMap<String, String> formData = context.getHttpRequest().getDecodedFormParameters();
 		user.setFirstName(formData.getFirst(RegistrationPage.FIELD_FIRST_NAME));
 		user.setLastName(formData.getFirst(RegistrationPage.FIELD_LAST_NAME));
-		user.setEmail(formData.getFirst(RegistrationPage.FIELD_EMAIL));
+		user.setEmail(formData.getFirst(RegistrationPage.FIELD_USERNAME));
 
 		// Add client roles to user
 		String clientId = formData.getFirst(Validation.FIELD_CLIENT_ID);
