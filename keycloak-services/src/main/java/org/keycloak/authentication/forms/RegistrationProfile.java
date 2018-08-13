@@ -70,10 +70,6 @@ public class RegistrationProfile implements FormAction, FormActionFactory {
 		MultivaluedMap<String, String> formData = context.getHttpRequest().getDecodedFormParameters();
 		List<FormMessage> errors = new ArrayList<>();
 
-		formData.forEach((k, v) -> {
-			logger.warn("Key: " + k + " Value: " + v);
-		});
-
 		context.getEvent().detail(Details.REGISTER_METHOD, "form");
 		String eventError = Errors.INVALID_REGISTRATION;
 		
@@ -97,7 +93,6 @@ public class RegistrationProfile implements FormAction, FormActionFactory {
 			switch (deviceType.toUpperCase()) {
 			case "WEBAPP":
 				isMobile = false;
-				logger.warn(username);
 	
 				if (Validation.isEmailValid(username)) {
 					formData.add(Validation.FIELD_EMAIL, username);

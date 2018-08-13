@@ -23,6 +23,7 @@ import java.util.concurrent.TimeUnit;
 
 import javax.ws.rs.client.Entity;
 import javax.ws.rs.core.MediaType;
+import javax.ws.rs.core.MultivaluedMap;
 import javax.ws.rs.core.Response;
 import javax.ws.rs.core.Response.Status.Family;
 import javax.ws.rs.core.UriBuilder;
@@ -38,6 +39,7 @@ import org.keycloak.authentication.RequiredActionContext;
 import org.keycloak.authentication.RequiredActionFactory;
 import org.keycloak.authentication.RequiredActionProvider;
 import org.keycloak.authentication.actiontoken.verifyemail.VerifyEmailActionToken;
+import org.keycloak.authentication.forms.RegistrationPage;
 import org.keycloak.common.util.Time;
 import org.keycloak.email.EmailException;
 import org.keycloak.email.EmailTemplateProvider;
@@ -66,11 +68,17 @@ public class VerifyEmail implements RequiredActionProvider, RequiredActionFactor
 
 	@Override
 	public void evaluateTriggers(RequiredActionContext context) {
+		MultivaluedMap<String, String> formData = context.getHttpRequest().getDecodedFormParameters();
+		
 		if (context.getRealm().isVerifyEmail() && !context.getUser().isEmailVerified()) {
 			context.getUser().addRequiredAction(UserModel.RequiredAction.VERIFY_EMAIL);
-			context.getUser().addRequiredAction(RequiredAction.UPDATE_PASSWORD.name());
 			logger.debug("User is required to verify email");
 		}
+		
+		// If no password, require password validation  
+        if (isBlank(formData.getFirst(RegistrationPage.FIELD_PASSWORD))) {
+        	context.getUser().addRequiredAction(RequiredAction.UPDATE_PASSWORD.name());
+        }
 	}
 
 	@Override
@@ -153,7 +161,6 @@ public class VerifyEmail implements RequiredActionProvider, RequiredActionFactor
 	}
 
 	private Response sendVerifyEmail(RequiredActionContext context, KeycloakSession session, LoginFormsProvider forms, UserModel user, AuthenticationSessionModel authSession, EventBuilder event) throws UriBuilderException, IllegalArgumentException {
-    	String username =  context.getUser().getUsername();
     	
         RealmModel realm = session.getContext().getRealm();
         UriInfo uriInfo = session.getContext().getUri();
@@ -169,14 +176,16 @@ public class VerifyEmail implements RequiredActionProvider, RequiredActionFactor
         String link = builder.build(realm.getName()).toString();
         long expirationInMinutes = TimeUnit.SECONDS.toMinutes(validityInSecs);
         
-		if (Validation.isPhoneValid(username)) {
-			return sendSMS(link, username, session, forms, event);
+		if (Validation.isPhoneValid(user.getUsername())) {
+			return sendSMS(realm, session, forms, user, authSession, event, link, expirationInMinutes);
 		}
 
         return sendEmail(realm, session, forms, user, authSession, event, link, expirationInMinutes);
     }
 	
-	private Response sendSMS(String link, String username, KeycloakSession session, LoginFormsProvider forms, EventBuilder event) {
+	private Response sendSMS(RealmModel realm, KeycloakSession session, LoginFormsProvider forms,
+			UserModel user, AuthenticationSessionModel authSession, EventBuilder event, String link,
+			long expirationInMinutes) {
 		logger.trace("sending sms message verifications");
 		
 		ResteasyClient client = new ResteasyClientBuilder().build();
@@ -184,7 +193,7 @@ public class VerifyEmail implements RequiredActionProvider, RequiredActionFactor
 		String serverURL = requestUri.getScheme() + "://" + requestUri.getHost() + "/unifiedpush-server/rest";
 		// First register installation
 		try {
-			ResteasyWebTarget target = client.target(serverURL + "/shortlinks/type/link/username/" + username);
+			ResteasyWebTarget target = client.target(serverURL + "/shortlinks/type/link/username/" + user.getUsername());
 			Response response = target.request().put(Entity.entity(link, MediaType.TEXT_PLAIN));
 			if (Family.familyOf(response.getStatus()) != Family.SUCCESSFUL)
 				throw new Exception("Unable to register new shortlink code. response code " + response.getStatus()); 
@@ -192,7 +201,7 @@ public class VerifyEmail implements RequiredActionProvider, RequiredActionFactor
 			String code = response.readEntity(String.class);
 			response.close();
 			
-			target = client.target(serverURL + "/shortlinks/sms/" + username);
+			target = client.target(serverURL + "/shortlinks/sms/" + user.getUsername());
 			response = target.request().put(Entity.entity(code, MediaType.TEXT_PLAIN));
 			if (Family.familyOf(response.getStatus()) != Family.SUCCESSFUL)
 				throw new Exception("Unable to send SMS shortlink code. response code " + response.getStatus()); 
@@ -223,4 +232,14 @@ public class VerifyEmail implements RequiredActionProvider, RequiredActionFactor
 
 		return forms.createResponse(UserModel.RequiredAction.VERIFY_EMAIL);
 	}
+
+    /**
+     * Check if string is blank (null or lenght is 0 or contains only white characters)
+     * 
+     * @param s to check
+     * @return true if string is blank
+     */
+    public static boolean isBlank(String s) {
+        return s == null || s.trim().length() == 0;
+    }
 }
